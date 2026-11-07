@@ -61,7 +61,8 @@ export function Morning({
 
     const portions = Object.fromEntries(dishes.map((d) => [d.id, Number(counts[d.id] || 0)]));
     if (Object.values(portions).every((n) => n === 0)) return setError(t.morning.needPortions);
-    const opening = money.parse(cash);
+    // Optional: an empty field means the till starts empty.
+    const opening = cash.trim() ? money.parse(cash) : 0;
     if (opening === null) return setError(t.morning.needCash);
 
     await saveMorning(date, opening, portions, allItems);
