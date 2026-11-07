@@ -4,7 +4,9 @@ import { useApp, useMoney } from '../context';
 import { saveClosing, skipClosing, updateClosingReasons } from '../db';
 import {
   cashCheck,
+  debtTotals,
   foodCheck,
+  salesTotals,
   missingFoodValue,
   missingPortions,
   portionsSold,
@@ -56,11 +58,12 @@ export function DayChecks({ date, closing }: { date: string; closing: ClosingRow
 
   const orders = data.orders.filter((o) => o.date === date);
   const cashOuts = data.cashOuts.filter((c) => c.date === date);
+  const payments = data.debtPayments.filter((p) => p.date === date);
   const food = foodCheck(day, orders, closing);
-  const cash = cashCheck(day, orders, cashOuts, closing);
-  const transfers = orders
-    .filter((o) => o.voidedAt === undefined && o.payment === 'transfer')
-    .reduce((sum, o) => sum + o.amountMinor, 0);
+  const cash = cashCheck(day, orders, cashOuts, closing, payments);
+  const transferSales = salesTotals(orders).transfer;
+  const debtTransfers = debtTotals(payments).transfer;
+  const transfers = transferSales + debtTransfers;
 
   const missing = food ? missingPortions(food) : 0;
   const extraFood = food ? food.reduce((sum, r) => sum + Math.max(0, r.diff), 0) : 0;
@@ -109,6 +112,7 @@ export function DayChecks({ date, closing }: { date: string; closing: ClosingRow
           <h2>{t.checks.cashTitle}</h2>
           <Row label={t.checks.opening} value={money.format(cash.opening)} />
           <Row label={t.checks.cashSales} value={`+ ${money.format(cash.cashSales)}`} />
+          {cash.debtCash > 0 && <Row label={t.checks.debtCash} value={`+ ${money.format(cash.debtCash)}`} />}
           {cash.cashOut > 0 && <Row label={t.checks.cashOut} value={`− ${money.format(cash.cashOut)}`} />}
           <Row label={t.checks.expectedCash} value={money.format(cash.expected)} strong />
           <Row label={t.checks.countedCash} value={money.format(cash.counted)} strong />
@@ -136,6 +140,12 @@ export function DayChecks({ date, closing }: { date: string; closing: ClosingRow
       {transfers > 0 && (
         <section className="card stack-sm">
           <Row label={t.checks.transfersTitle} value={money.format(transfers)} strong />
+          {debtTransfers > 0 && (
+            <>
+              <Row label={t.checks.transferSales} value={money.format(transferSales)} />
+              <Row label={t.checks.debtTransfer} value={money.format(debtTransfers)} />
+            </>
+          )}
           <p className="hint">{t.checks.transfersHint}</p>
         </section>
       )}

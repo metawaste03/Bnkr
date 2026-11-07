@@ -23,6 +23,10 @@ export function weekStart(date: string): string {
   return addDays(date, dayOfWeek === 0 ? -6 : 1 - dayOfWeek);
 }
 
+export function daysBetween(from: string, to: string): number {
+  return Math.round((parseUtc(to).getTime() - parseUtc(from).getTime()) / 86_400_000);
+}
+
 export function inWeek(date: string, start: string): boolean {
   return date >= start && date <= addDays(start, 6);
 }

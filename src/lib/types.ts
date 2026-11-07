@@ -1,6 +1,7 @@
 // All money values are whole minor units (for example cents).
 
-export type Payment = 'cash' | 'transfer';
+export type Payment = 'cash' | 'transfer' | 'credit'; // credit = eat now, pay later
+export type DebtMethod = 'cash' | 'transfer' | 'write-off';
 export type ExpenseKind = 'daily' | 'weekly';
 
 export interface Settings {
@@ -46,9 +47,20 @@ export interface Order {
   customerNumber: number;
   payment: Payment;
   lines: OrderLine[];
-  amountMinor: number; // what was actually paid, which may differ from the list total
+  amountMinor: number; // what was charged, which may differ from the list total
+  customerName?: string; // who owes, for pay-later sales
   createdAt: number;
   voidedAt?: number;
+}
+
+/** Money received (or given up on) for a pay-later sale, dated the day it happened. */
+export interface DebtPayment {
+  id: string;
+  orderId: string;
+  date: string;
+  amountMinor: number;
+  method: DebtMethod;
+  createdAt: number;
 }
 
 export interface CashOut {
@@ -80,4 +92,5 @@ export interface AllData {
   orders: Order[];
   cashOuts: CashOut[];
   closings: Closing[];
+  debtPayments: DebtPayment[];
 }

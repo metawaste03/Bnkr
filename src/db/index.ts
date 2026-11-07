@@ -4,6 +4,8 @@ import type {
   CashOut,
   Closing,
   Day,
+  DebtMethod,
+  DebtPayment,
   Dish,
   Expense,
   ExpenseKind,
@@ -22,9 +24,10 @@ export const db = new Dexie('daybook') as Dexie & {
   orders: EntityTable<Order, 'id'>;
   cashOuts: EntityTable<CashOut, 'id'>;
   closings: EntityTable<Closing, 'date'>;
+  debtPayments: EntityTable<DebtPayment, 'id'>;
 };
 
-db.version(1).stores({
+const V1_STORES = {
   settings: 'key',
   dishes: 'id',
   days: 'date',
@@ -32,12 +35,15 @@ db.version(1).stores({
   orders: 'id, date',
   cashOuts: 'id, date',
   closings: 'date',
-});
+};
+db.version(1).stores(V1_STORES);
+// Version 2 adds pay-later repayments. Existing records are kept as they are.
+db.version(2).stores({ ...V1_STORES, debtPayments: 'id, orderId, date' });
 
 const newId = () => crypto.randomUUID();
 
 export async function loadAll(): Promise<AllData> {
-  const [settings, dishes, days, expenses, orders, cashOuts, closings] = await Promise.all([
+  const [settings, dishes, days, expenses, orders, cashOuts, closings, debtPayments] = await Promise.all([
     db.settings.get('app'),
     db.dishes.orderBy('id').toArray(),
     db.days.toArray(),
@@ -45,9 +51,10 @@ export async function loadAll(): Promise<AllData> {
     db.orders.toArray(),
     db.cashOuts.toArray(),
     db.closings.toArray(),
+    db.debtPayments.toArray(),
   ]);
   dishes.sort((a, b) => a.sort - b.sort);
-  return { settings: settings ?? null, dishes, days, expenses, orders, cashOuts, closings };
+  return { settings: settings ?? null, dishes, days, expenses, orders, cashOuts, closings, debtPayments };
 }
 
 export async function completeSetup(
@@ -115,7 +122,9 @@ export async function addOrder(
   lines: OrderLine[],
   amountMinor: number,
   payment: Payment,
+  customerName?: string,
 ): Promise<Order> {
+  if (payment === 'credit' && !customerName?.trim()) throw new Error('A pay-later sale needs a customer name');
   return db.transaction('rw', db.orders, async () => {
     const sameDay = await db.orders.where('date').equals(date).toArray();
     const customerNumber = sameDay.reduce((max, o) => Math.max(max, o.customerNumber), 0) + 1;
@@ -126,6 +135,7 @@ export async function addOrder(
       payment,
       lines,
       amountMinor,
+      ...(payment === 'credit' ? { customerName: customerName!.trim() } : {}),
       createdAt: Date.now(),
     };
     await db.orders.put(order);
@@ -133,7 +143,35 @@ export async function addOrder(
   });
 }
 
-export const voidOrder = (id: string) => db.orders.update(id, { voidedAt: Date.now() });
+/** Marks a sale as removed. Refused once money has been recorded against it, so repayments never lose their sale. */
+export async function voidOrder(id: string): Promise<boolean> {
+  return db.transaction('rw', db.orders, db.debtPayments, async () => {
+    if ((await db.debtPayments.where('orderId').equals(id).count()) > 0) return false;
+    await db.orders.update(id, { voidedAt: Date.now() });
+    return true;
+  });
+}
+
+/**
+ * Records money received for a pay-later sale, or gives up on what's left ('write-off').
+ * Refused if it's more than is still owed, so a debt can't be paid twice.
+ */
+export async function addDebtPayment(
+  orderId: string,
+  date: string,
+  amountMinor: number,
+  method: DebtMethod,
+): Promise<boolean> {
+  return db.transaction('rw', db.orders, db.debtPayments, async () => {
+    const order = await db.orders.get(orderId);
+    if (!order || order.payment !== 'credit' || order.voidedAt !== undefined || amountMinor <= 0) return false;
+    const already = await db.debtPayments.where('orderId').equals(orderId).toArray();
+    const remaining = order.amountMinor - already.reduce((sum, p) => sum + p.amountMinor, 0);
+    if (amountMinor > remaining) return false;
+    await db.debtPayments.put({ id: newId(), orderId, date, amountMinor, method, createdAt: Date.now() });
+    return true;
+  });
+}
 
 export async function addCashOut(date: string, amountMinor: number, note: string): Promise<void> {
   await db.cashOuts.put({ id: newId(), date, amountMinor, note, createdAt: Date.now() });

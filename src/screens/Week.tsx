@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ExpenseEntry, Row, useExpenseDraft } from '../components/common';
 import { useApp, useMoney } from '../context';
 import { addExpense, removeExpense } from '../db';
-import { pointers, previousWeek, weekSummary, type Pointer } from '../lib/calculations';
+import { openDebts, pointers, previousWeek, weekSummary, type Pointer } from '../lib/calculations';
 import { addDays, formatDay, formatShortDate, formatWeekday, inWeek, weekStart } from '../lib/dates';
 import { t } from '../strings';
 import { useExpenseSuggestions } from './Morning';
@@ -13,6 +13,10 @@ function pointerText(p: Pointer, format: (minor: number) => string): string {
       return t.pointers.cashRepeat(p.days, format(p.amount));
     case 'food-repeat':
       return t.pointers.foodRepeat(p.days, p.portions);
+    case 'owed-old':
+      return t.pointers.owedOld(p.count, format(p.amount));
+    case 'repeat-debtor':
+      return t.pointers.repeatDebtor(p.name, p.count, format(p.amount));
     case 'break-even':
       return t.pointers.breakEven(p.needed, p.average);
     case 'best-seller':
@@ -37,7 +41,10 @@ export function Week({ onOpenDay }: { onOpenDay: (date: string) => void }) {
 
   const week = useMemo(() => weekSummary(data, start), [data, start]);
   const lastWeek = useMemo(() => weekSummary(data, previousWeek(start)), [data, start]);
-  const tips = pointers(week, lastWeek);
+  const open = useMemo(() => openDebts(data), [data]);
+  const owedNow = open.reduce((sum, d) => sum + d.remaining, 0);
+  const isCurrentWeek = start === currentWeek;
+  const tips = isCurrentWeek ? pointers(week, lastWeek, open, today) : pointers(week, lastWeek);
   const weeklyItems = data.expenses.filter((e) => e.kind === 'weekly' && inWeek(e.date, start));
   const isEmpty = week.daysOpen === 0 && weeklyItems.length === 0;
 
@@ -83,6 +90,7 @@ export function Week({ onOpenDay }: { onOpenDay: (date: string) => void }) {
           <Row label={t.week.sales} value={money.format(week.sales)} strong />
           <Row label={t.week.dailyCosts} value={`− ${money.format(week.dailyCosts)}`} />
           <Row label={t.week.weeklyCosts} value={`− ${money.format(week.weeklyCosts)}`} />
+          {week.writtenOff > 0 && <Row label={t.week.writtenOff} value={`− ${money.format(week.writtenOff)}`} />}
         </section>
       )}
 
@@ -116,6 +124,11 @@ export function Week({ onOpenDay }: { onOpenDay: (date: string) => void }) {
           <h2>{t.week.money}</h2>
           <Row label={t.week.cash} value={money.format(week.cash)} />
           <Row label={t.week.transfers} value={money.format(week.transfer)} />
+          {week.credit > 0 && <Row label={t.week.payLater} value={money.format(week.credit)} />}
+          {week.debtCash + week.debtTransfer > 0 && (
+            <Row label={t.week.debtsPaid} value={money.format(week.debtCash + week.debtTransfer)} />
+          )}
+          {isCurrentWeek && owedNow > 0 && <Row label={t.week.owedNow} value={money.format(owedNow)} strong />}
           {week.avgCostPerPortion !== null && (
             <Row label={t.week.avgCost} value={money.format(week.avgCostPerPortion)} />
           )}

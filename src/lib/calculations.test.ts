@@ -3,7 +3,9 @@ import {
   breakEvenPortionsPerDay,
   cashCheck,
   dayNumbers,
+  debtorsOf,
   foodCheck,
+  openDebts,
   missingFoodValue,
   missingPortions,
   pointers,
@@ -12,7 +14,7 @@ import {
   weekSummary,
 } from './calculations';
 import { addDays, weekStart } from './dates';
-import type { AllData, Closing, Day, Dish, Expense, Order } from './types';
+import type { AllData, Closing, Day, DebtPayment, Dish, Expense, Order } from './types';
 
 const taco: Dish = { id: 'taco', name: 'Taco', priceMinor: 800, active: true, sort: 0 };
 const soup: Dish = { id: 'soup', name: 'Soup', priceMinor: 500, active: true, sort: 1 };
@@ -58,7 +60,17 @@ const emptyData = (over: Partial<AllData>): AllData => ({
   orders: [],
   cashOuts: [],
   closings: [],
+  debtPayments: [],
   ...over,
+});
+
+const pay = (orderId: string, date: string, amountMinor: number, method: DebtPayment['method']): DebtPayment => ({
+  id: `p${nextId++}`,
+  orderId,
+  date,
+  amountMinor,
+  method,
+  createdAt: 0,
 });
 
 const D = '2026-11-04'; // a Wednesday
@@ -132,6 +144,104 @@ describe('closing checks', () => {
     expect(cashCheck(day(D, 0, {}), [], [], c)).toBeNull();
     expect(foodCheck(day(D, 0, {}), [], c)).toBeNull();
     expect(cashCheck(day(D, 0, {}), [], [], undefined)).toBeNull();
+  });
+});
+
+describe('pay later', () => {
+  const NEXT = '2026-11-05';
+  const credit = (date: string, qty: number, name = 'Chidi') =>
+    order(date, 'taco', qty, 800, { payment: 'credit', customerName: name });
+
+  it('counts the food as sold but expects no cash for it', () => {
+    const d = day(D, 1000, { taco: 5 });
+    const orders = [order(D, 'taco', 1, 800), credit(D, 2)];
+    const c = closing(D, 1800, { taco: 2 });
+    expect(foodCheck(d, orders, c)![0].diff).toBe(0);
+    const cash = cashCheck(d, orders, [], c)!;
+    expect(cash.expected).toBe(1800);
+    expect(cash.diff).toBe(0);
+  });
+
+  it('counts as a sale on the day the food was sold', () => {
+    const numbers = dayNumbers([credit(D, 2)], [expense(D, 'daily', 500)]);
+    expect(numbers).toMatchObject({ credit: 1600, total: 1600, profit: 1100 });
+  });
+
+  it('paid the same day in cash: expected in the till that day', () => {
+    const sale = credit(D, 2);
+    const cash = cashCheck(day(D, 0, { taco: 2 }), [sale], [], closing(D, 1600, { taco: 0 }), [pay(sale.id, D, 1600, 'cash')])!;
+    expect(cash.debtCash).toBe(1600);
+    expect(cash.expected).toBe(1600);
+    expect(cash.diff).toBe(0);
+  });
+
+  it('paid the next day in cash: raises the next day, not the sale day, and is not a new sale', () => {
+    const sale = credit(D, 2);
+    const payment = pay(sale.id, NEXT, 1600, 'cash');
+    const data = emptyData({
+      days: [day(D, 0, { taco: 2 }), day(NEXT, 0, { taco: 0 })],
+      orders: [sale],
+      debtPayments: [payment],
+      closings: [closing(D, 0, { taco: 0 }), closing(NEXT, 1600, { taco: 0 })],
+    });
+    const week = weekSummary(data, weekStart(D));
+    expect(week.days.map((r) => r.cashDiff)).toEqual([0, 0]);
+    expect(week.days.map((r) => r.sales)).toEqual([1600, 0]);
+    expect(week.sales).toBe(1600);
+    expect(week.debtCash).toBe(1600);
+    expect(openDebts(data)).toHaveLength(0);
+  });
+
+  it('paid by transfer: shown with transfers, not in the till', () => {
+    const sale = credit(D, 1);
+    const cash = cashCheck(day(D, 0, {}), [sale], [], closing(D, 0, {}), [pay(sale.id, D, 800, 'transfer')])!;
+    expect(cash.expected).toBe(0);
+    expect(cash.transfers).toBe(800);
+  });
+
+  it('partly paid: the rest stays owed', () => {
+    const sale = credit(D, 2);
+    const data = emptyData({ orders: [sale], debtPayments: [pay(sale.id, NEXT, 1000, 'cash')] });
+    const [debt] = openDebts(data);
+    expect(debt).toMatchObject({ paid: 1000, remaining: 600 });
+  });
+
+  it("never paid: marking it won't be paid takes it off profit in the week it's given up", () => {
+    const sale = credit(D, 2);
+    const data = emptyData({
+      days: [day(D, 0, { taco: 2 })],
+      orders: [sale],
+      debtPayments: [pay(sale.id, NEXT, 1600, 'write-off')],
+    });
+    const week = weekSummary(data, weekStart(D));
+    expect(week.sales).toBe(1600);
+    expect(week.writtenOff).toBe(1600);
+    expect(week.profit).toBe(0);
+    expect(openDebts(data)).toHaveLength(0);
+  });
+
+  it('ignores removed pay-later sales', () => {
+    expect(openDebts(emptyData({ orders: [credit(D, 1), { ...credit(D, 1), voidedAt: 1 }] }))).toHaveLength(1);
+  });
+
+  it('groups debts by name, ignoring case and spaces', () => {
+    const debtors = debtorsOf(
+      openDebts(emptyData({ orders: [credit(D, 1, 'Chidi'), credit(NEXT, 2, ' chidi '), credit(D, 1, 'Ada')] })),
+    );
+    expect(debtors.map((d) => [d.name, d.debts.length, d.total])).toEqual([
+      ['Chidi', 2, 2400],
+      ['Ada', 1, 800],
+    ]);
+  });
+
+  it('points out old debts and people with more than one unpaid sale', () => {
+    const today = '2026-11-08';
+    const open = openDebts(emptyData({ orders: [credit('2026-11-04', 1), credit('2026-11-07', 1), credit('2026-11-07', 1, 'Ada')] }));
+    const empty = weekSummary(emptyData({}), weekStart(today));
+    const found = pointers(empty, empty, open, today);
+    expect(found.find((p) => p.id === 'owed-old')).toMatchObject({ count: 1, amount: 800 });
+    expect(found.find((p) => p.id === 'repeat-debtor')).toMatchObject({ name: 'Chidi', count: 2, amount: 1600 });
+    expect(pointers(empty, empty, open)).toEqual([]); // past weeks get no debt pointers
   });
 });
 

@@ -6,6 +6,7 @@ import { portionsSold } from '../lib/calculations';
 import { formatDay } from '../lib/dates';
 import type { Dish, Payment } from '../lib/types';
 import { t } from '../strings';
+import { useOwedTotal } from './Owed';
 
 /** The sale form: tap dishes, then tap Cash or Transfer to save. Used live and for missed sales. */
 export function SaleForm({ date, onSaved }: { date: string; onSaved?: () => void }) {
@@ -14,6 +15,9 @@ export function SaleForm({ date, onSaved }: { date: string; onSaved?: () => void
   const [cart, setCart] = useState<Record<string, number>>({});
   const [override, setOverride] = useState<string | null>(null);
   const [toast, setToast] = useState<{ orderId: string | null; text: string } | null>(null);
+  const [askName, setAskName] = useState(false);
+  const [name, setName] = useState('');
+  const [nameError, setNameError] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
@@ -22,6 +26,19 @@ export function SaleForm({ date, onSaved }: { date: string; onSaved?: () => void
   const dayOrders = useMemo(() => data.orders.filter((o) => o.date === date), [data.orders, date]);
   const sold = portionsSold(dayOrders);
   const nextCustomer = dayOrders.reduce((max, o) => Math.max(max, o.customerNumber), 0) + 1;
+
+  // People who have bought on credit before, most recent first, for one-tap entry.
+  const recentNames = useMemo(() => {
+    const seen = new Map<string, string>();
+    const credit = data.orders
+      .filter((o) => o.payment === 'credit' && o.customerName)
+      .sort((a, b) => b.createdAt - a.createdAt);
+    for (const o of credit) {
+      const n = o.customerName!.trim();
+      if (!seen.has(n.toLowerCase())) seen.set(n.toLowerCase(), n);
+    }
+    return [...seen.values()].slice(0, 6);
+  }, [data.orders]);
 
   const listTotal = dishes.reduce((sum, d) => sum + (cart[d.id] ?? 0) * d.priceMinor, 0);
   const portionCount = Object.values(cart).reduce((a, b) => a + b, 0);
@@ -38,16 +55,28 @@ export function SaleForm({ date, onSaved }: { date: string; onSaved?: () => void
     toastTimer.current = window.setTimeout(() => setToast(null), 6000);
   };
 
-  const save = async (payment: Payment) => {
+  const save = async (payment: Payment, customerName?: string) => {
     if (!canSave || amount === null) return;
     const lines = dishes
       .filter((d) => (cart[d.id] ?? 0) > 0)
       .map((d) => ({ dishId: d.id, qty: cart[d.id], unitPriceMinor: d.priceMinor }));
-    const order = await addOrder(date, lines, amount, payment);
+    const order = await addOrder(date, lines, amount, payment, customerName);
     setCart({});
     setOverride(null);
-    showToast(t.sell.saved(order.customerNumber), order.id);
+    setAskName(false);
+    setName('');
+    setNameError(false);
+    showToast(
+      payment === 'credit' ? t.sell.savedCredit(order.customerNumber, customerName!) : t.sell.saved(order.customerNumber),
+      order.id,
+    );
     onSaved?.();
+  };
+
+  const saveCredit = () => {
+    const trimmed = name.trim().replace(/\s+/g, ' ');
+    if (!trimmed) return setNameError(true);
+    void save('credit', trimmed);
   };
 
   const undo = async () => {
@@ -114,14 +143,57 @@ export function SaleForm({ date, onSaved }: { date: string; onSaved?: () => void
           </button>
         )}
         {override !== null && overrideMinor === null && <p className="error">{t.common.invalidAmount}</p>}
-        <div className="pay-buttons">
-          <button type="button" className="btn primary big" disabled={!canSave} onClick={() => save('cash')}>
-            {t.sell.cash}
-          </button>
-          <button type="button" className="btn transfer big" disabled={!canSave} onClick={() => save('transfer')}>
-            {t.sell.transfer}
-          </button>
-        </div>
+        {askName ? (
+          <div className="credit-panel stack-sm">
+            <Field label={t.sell.whoPays}>
+              {(id) => (
+                <input
+                  id={id}
+                  className="input"
+                  autoFocus
+                  autoComplete="off"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    setNameError(false);
+                  }}
+                />
+              )}
+            </Field>
+            {recentNames.length > 0 && (
+              <div className="chips">
+                {recentNames.map((n) => (
+                  <button key={n} type="button" className="chip" onClick={() => setName(n)}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            )}
+            {nameError && <p className="error" role="alert">{t.sell.needName}</p>}
+            <div className="btn-row">
+              <button type="button" className="btn ghost" onClick={() => setAskName(false)}>
+                {t.common.cancel}
+              </button>
+              <button type="button" className="btn primary" disabled={!canSave} onClick={saveCredit}>
+                {t.sell.saveCredit}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="pay-buttons">
+              <button type="button" className="btn primary big" disabled={!canSave} onClick={() => save('cash')}>
+                {t.sell.cash}
+              </button>
+              <button type="button" className="btn transfer big" disabled={!canSave} onClick={() => save('transfer')}>
+                {t.sell.transfer}
+              </button>
+            </div>
+            <button type="button" className="btn ghost" disabled={!canSave} onClick={() => setAskName(true)}>
+              {t.sell.payLater}
+            </button>
+          </>
+        )}
       </div>
 
       {toast && (
@@ -183,6 +255,8 @@ export function Sell({
   onViewToday: () => void;
 }) {
   const { data, today } = useApp();
+  const money = useMoney();
+  const owedTotal = useOwedTotal();
   const [showCashOut, setShowCashOut] = useState(false);
   const day = data.days.find((d) => d.date === today);
   const closed = data.closings.some((c) => c.date === today);
@@ -226,6 +300,11 @@ export function Sell({
             {t.day.closeDay}
           </button>
         </div>
+      )}
+      {owedTotal > 0 && (
+        <button className="link" onClick={onViewToday}>
+          {t.sell.owedLink(money.format(owedTotal))}
+        </button>
       )}
     </main>
   );

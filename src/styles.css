@@ -275,6 +275,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .day-row-main { display: flex; flex-direction: column; min-width: 0; }
 
 .dish-editor { padding-top: 14px; border-top: 1px solid var(--line); }
+
+/* Pay later */
+.credit-panel { padding-top: 6px; }
+.debtor { padding-top: 12px; border-top: 1px solid var(--line); }
+.debt { padding-left: 2px; }
+.debt-info { display: flex; flex-direction: column; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.row > .debt-info { text-align: left; }
+.pay-debt { background: var(--paper); border-radius: 12px; padding: 12px; }
 .btn.danger { color: var(--bad); border-color: var(--bad); }
 
 .banner {
