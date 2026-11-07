@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  base: '/daybook/', // served from metawaste03.github.io/daybook/
+  base: '/Bnkr/', // served from metawaste03.github.io/Bnkr/ (case-sensitive)
   plugins: [
     react(),
     VitePWA({
