@@ -13,6 +13,7 @@ import type {
   Settings,
 } from '../lib/types';
 
+// The app's original name. Don't rename this: a new name would open an empty database and strand saved records.
 export const db = new Dexie('daybook') as Dexie & {
   settings: EntityTable<Settings, 'key'>;
   dishes: EntityTable<Dish, 'id'>;

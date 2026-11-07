@@ -160,10 +160,10 @@ export function More() {
         <h2>{t.more.exportTitle}</h2>
         <p className="hint">{t.more.exportHint}</p>
         <div className="btn-row">
-          <button className="btn secondary" onClick={() => downloadFile(`daybook-sales-${today}.csv`, salesCsv(data), 'text/csv')}>
+          <button className="btn secondary" onClick={() => downloadFile(`bnkr-sales-${today}.csv`, salesCsv(data), 'text/csv')}>
             {t.more.exportSales}
           </button>
-          <button className="btn secondary" onClick={() => downloadFile(`daybook-costs-${today}.csv`, expensesCsv(data), 'text/csv')}>
+          <button className="btn secondary" onClick={() => downloadFile(`bnkr-costs-${today}.csv`, expensesCsv(data), 'text/csv')}>
             {t.more.exportCosts}
           </button>
         </div>

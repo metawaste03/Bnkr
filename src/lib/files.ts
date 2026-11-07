@@ -19,7 +19,7 @@ export function downloadFile(name: string, content: string, type: string): void 
  */
 export async function saveBackup(): Promise<boolean> {
   const content = JSON.stringify(await createBackup());
-  const name = `daybook-backup-${toDateString(new Date())}.json`;
+  const name = `bnkr-backup-${toDateString(new Date())}.json`;
   const file = new File([content], name, { type: 'application/json' });
 
   if (navigator.canShare?.({ files: [file] })) {

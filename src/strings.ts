@@ -196,7 +196,7 @@ export const t = {
     restore: 'Restore from backup',
     restoreConfirm: (date: string) =>
       `Replace everything on this phone with the backup from ${date}? This can't be undone.`,
-    restoreBad: "That file isn't a valid Daybook backup. Nothing was changed.",
+    restoreBad: "That file isn't a valid Bnkr backup. Nothing was changed.",
     restored: 'Backup restored.',
     backupSaved: 'Backup saved.',
     exportTitle: 'Spreadsheet export',

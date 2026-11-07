@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/apple-touch-icon.png'],
       manifest: {
-        name: 'Daybook',
-        short_name: 'Daybook',
+        name: 'Bnkr',
+        short_name: 'Bnkr',
         description: 'Sales, costs and daily cash checks for a food stand.',
         theme_color: '#b4461f',
         background_color: '#faf6ef',
