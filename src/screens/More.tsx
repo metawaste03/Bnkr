@@ -1,82 +1,123 @@
-import { useEffect, useRef, useState } from 'react';
-import { MoneyInput } from '../components/common';
+import { useRef, useState } from 'react';
+import { Field, MoneyInput } from '../components/common';
 import { useApp, useMoney } from '../context';
-import { addDish, updateDish } from '../db';
+import { addDish, deleteDish, isDishUsed, updateDish } from '../db';
 import { restoreBackup, validateBackup } from '../db/backup';
 import { saveBackup, downloadFile } from '../lib/files';
 import { expensesCsv, salesCsv } from '../lib/csv';
 import type { Dish } from '../lib/types';
 import { t } from '../strings';
 
-function DishEditor({ dish }: { dish: Dish }) {
+type Message = { text: string; bad?: boolean } | null;
+
+function DishEditor({
+  dish,
+  used,
+  onlyDish,
+  onMessage,
+}: {
+  dish: Dish;
+  used: boolean;
+  onlyDish: boolean;
+  onMessage: (m: Message) => void;
+}) {
   const money = useMoney();
   const [name, setName] = useState(dish.name);
   const [price, setPrice] = useState(money.toInput(dish.priceMinor));
-  const [invalid, setInvalid] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setName(dish.name);
-    setPrice(money.toInput(dish.priceMinor));
-  }, [dish.name, dish.priceMinor, money]);
+  const priceMinor = money.parse(price);
+  const changed = name.trim() !== dish.name || priceMinor !== dish.priceMinor;
 
-  const commit = () => {
-    const priceMinor = money.parse(price);
-    setInvalid(priceMinor === null || !name.trim());
-    if (priceMinor === null || !name.trim()) return;
-    if (name.trim() !== dish.name || priceMinor !== dish.priceMinor) {
-      void updateDish(dish.id, { name: name.trim(), priceMinor });
-    }
+  const save = async () => {
+    if (!name.trim() || priceMinor === null) return setError(t.setup.needDish);
+    setError(null);
+    await updateDish(dish.id, { name: name.trim(), priceMinor });
+    onMessage({ text: t.more.dishSaved(name.trim()) });
+  };
+
+  const hide = () => {
+    if (window.confirm(t.more.removeDishConfirm(dish.name))) void updateDish(dish.id, { active: false });
+  };
+
+  const remove = async () => {
+    if (!window.confirm(t.more.deleteDishConfirm(dish.name))) return;
+    if (!(await deleteDish(dish.id))) void updateDish(dish.id, { active: false }); // it was sold meanwhile
   };
 
   return (
-    <div className="stack-sm">
-      <div className="dish-edit">
-        <input
-          className="input"
-          aria-label={t.setup.dishName}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={commit}
-        />
-        <div onBlur={commit}>
-          <MoneyInput value={price} onChange={setPrice} />
-        </div>
-        <button
-          className="link danger"
-          onClick={() => {
-            if (window.confirm(t.more.removeDishConfirm(dish.name))) void updateDish(dish.id, { active: false });
-          }}
-        >
-          {t.more.removeDish}
-        </button>
+    <div className="dish-editor stack-sm">
+      <Field label={t.setup.dishName}>
+        {(id) => <input id={id} className="input" value={name} onChange={(e) => setName(e.target.value)} />}
+      </Field>
+      <Field label={t.setup.price}>
+        {(id) => <MoneyInput id={id} value={price} onChange={setPrice} />}
+      </Field>
+      {error && <p className="error">{error}</p>}
+      <div className="btn-row">
+        {changed && (
+          <button className="btn primary" onClick={save}>
+            {t.more.saveDish}
+          </button>
+        )}
+        {!onlyDish &&
+          (used ? (
+            <button className="btn ghost" onClick={hide}>
+              {t.more.removeDish}
+            </button>
+          ) : (
+            <button className="btn ghost danger" onClick={remove}>
+              {t.more.deleteDish}
+            </button>
+          ))}
       </div>
-      {invalid && <p className="error">{t.common.invalidAmount}</p>}
+      <p className="hint">{onlyDish ? t.more.lastDish : used ? t.more.usedHint : t.more.unusedHint}</p>
+    </div>
+  );
+}
+
+function AddDish({ nextSort, onMessage }: { nextSort: number; onMessage: (m: Message) => void }) {
+  const money = useMoney();
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const add = async () => {
+    const priceMinor = money.parse(price);
+    if (!name.trim() || priceMinor === null) return setError(t.setup.needDish);
+    await addDish(name.trim(), priceMinor, nextSort);
+    setName('');
+    setPrice('');
+    setError(null);
+    onMessage({ text: t.more.dishSaved(name.trim()) });
+  };
+
+  return (
+    <div className="dish-editor stack-sm">
+      <h3>{t.more.addDishTitle}</h3>
+      <Field label={t.setup.dishName}>
+        {(id) => <input id={id} className="input" value={name} onChange={(e) => setName(e.target.value)} />}
+      </Field>
+      <Field label={t.setup.price}>
+        {(id) => <MoneyInput id={id} value={price} onChange={setPrice} />}
+      </Field>
+      {error && <p className="error">{error}</p>}
+      <button className="btn secondary" onClick={add}>
+        {t.more.addDish}
+      </button>
     </div>
   );
 }
 
 export function More() {
   const { data, today } = useApp();
-  const money = useMoney();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [message, setMessage] = useState<{ text: string; bad?: boolean } | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newPrice, setNewPrice] = useState('');
+  const [message, setMessage] = useState<Message>(null);
 
   const activeDishes = data.dishes.filter((d) => d.active);
+  const hiddenDishes = data.dishes.filter((d) => !d.active);
+  const nextSort = data.dishes.reduce((max, d) => Math.max(max, d.sort), -1) + 1;
   const lastBackupAt = data.settings?.lastBackupAt;
-
-  const addNewDish = async () => {
-    const priceMinor = money.parse(newPrice);
-    if (!newName.trim() || priceMinor === null) {
-      setMessage({ text: t.setup.needDish, bad: true });
-      return;
-    }
-    await addDish(newName.trim(), priceMinor, data.dishes.length);
-    setNewName('');
-    setNewPrice('');
-    setMessage(null);
-  };
 
   const backup = async () => {
     if (await saveBackup()) setMessage({ text: t.more.backupSaved });
@@ -108,6 +149,37 @@ export function More() {
         </p>
       )}
 
+      <section className="card stack">
+        <div className="stack-sm">
+          <h2>{t.more.dishes}</h2>
+          <p className="hint">{t.more.dishesHint}</p>
+        </div>
+        {activeDishes.map((dish) => (
+          <DishEditor
+            key={`${dish.id}-${dish.name}-${dish.priceMinor}`}
+            dish={dish}
+            used={isDishUsed(data, dish.id)}
+            onlyDish={activeDishes.length === 1}
+            onMessage={setMessage}
+          />
+        ))}
+        <AddDish nextSort={nextSort} onMessage={setMessage} />
+        {hiddenDishes.length > 0 && (
+          <div className="stack-sm">
+            <h3>{t.more.hiddenTitle}</h3>
+            {hiddenDishes.map((dish) => (
+              <div className="row" key={dish.id}>
+                <span>{dish.name}</span>
+                <button className="link" onClick={() => void updateDish(dish.id, { active: true })}>
+                  {t.more.showDish}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="hint">{t.more.currency(data.settings?.currency ?? '')}</p>
+      </section>
+
       <section className="card stack-sm">
         <h2>{t.more.backupTitle}</h2>
         <p className="hint">{t.more.backupHint}</p>
@@ -132,28 +204,6 @@ export function More() {
             if (file) void restore(file);
           }}
         />
-      </section>
-
-      <section className="card stack-sm">
-        <h2>{t.more.dishes}</h2>
-        <p className="hint">{t.more.dishesHint}</p>
-        {activeDishes.map((dish) => (
-          <DishEditor key={dish.id} dish={dish} />
-        ))}
-        <div className="dish-edit">
-          <input
-            className="input"
-            aria-label={t.setup.dishName}
-            placeholder={t.setup.dishName}
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-          />
-          <MoneyInput value={newPrice} onChange={setNewPrice} />
-          <button className="link" onClick={addNewDish}>
-            {t.common.add}
-          </button>
-        </div>
-        <p className="hint">{t.more.currency(data.settings?.currency ?? '')}</p>
       </section>
 
       <section className="card stack-sm">

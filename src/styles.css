@@ -274,8 +274,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .day-list li:first-child .day-row { border-top: 0; }
 .day-row-main { display: flex; flex-direction: column; min-width: 0; }
 
-.dish-edit { display: grid; grid-template-columns: 1fr 100px auto; gap: 8px; align-items: center; }
-.dish-edit .link { padding: 8px 4px; }
+.dish-editor { padding-top: 14px; border-top: 1px solid var(--line); }
+.btn.danger { color: var(--bad); border-color: var(--bad); }
 
 .banner {
   display: flex;
@@ -311,5 +311,5 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tab.active { color: var(--accent-dark); border-top-color: var(--accent); font-weight: 800; }
 
 @media (max-width: 360px) {
-  .expense-entry, .dish-edit { grid-template-columns: 1fr 84px auto; }
+  .expense-entry { grid-template-columns: 1fr 84px auto; }
 }

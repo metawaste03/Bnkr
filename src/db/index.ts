@@ -67,6 +67,24 @@ export async function addDish(name: string, priceMinor: number, sort: number): P
 export const updateDish = (id: string, changes: Partial<Pick<Dish, 'name' | 'priceMinor' | 'active'>>) =>
   db.dishes.update(id, changes);
 
+/** A dish is in use once it has been sold (even if the sale was removed) or had portions on any day. */
+export function isDishUsed(data: Pick<AllData, 'orders' | 'days'>, dishId: string): boolean {
+  return (
+    data.orders.some((o) => o.lines.some((l) => l.dishId === dishId)) ||
+    data.days.some((d) => (d.portions[dishId] ?? 0) > 0)
+  );
+}
+
+/** Deletes a dish only if it has never been used, so no past record loses its dish name. */
+export async function deleteDish(id: string): Promise<boolean> {
+  return db.transaction('rw', db.dishes, db.orders, db.days, async () => {
+    const [orders, days] = await Promise.all([db.orders.toArray(), db.days.toArray()]);
+    if (isDishUsed({ orders, days }, id)) return false;
+    await db.dishes.delete(id);
+    return true;
+  });
+}
+
 export async function saveMorning(
   date: string,
   openingCashMinor: number,

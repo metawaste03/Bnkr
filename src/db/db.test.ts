@@ -1,6 +1,16 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { addExpense, addOrder, completeSetup, db, loadAll, saveClosing, saveMorning, voidOrder } from './index';
+import {
+  addExpense,
+  addOrder,
+  completeSetup,
+  db,
+  deleteDish,
+  loadAll,
+  saveClosing,
+  saveMorning,
+  voidOrder,
+} from './index';
 import { createBackup, restoreBackup, validateBackup } from './backup';
 import { salesCsv } from '../lib/csv';
 
@@ -25,6 +35,41 @@ describe('customer numbers', () => {
     const orders = await db.orders.toArray();
     expect(orders).toHaveLength(2);
     expect(orders.find((o) => o.id === first.id)?.voidedAt).toBeTypeOf('number');
+  });
+});
+
+describe('deleting dishes', () => {
+  async function setupDishes() {
+    await completeSetup('NGN', [
+      { name: 'Jollof Rice', priceMinor: 150000 },
+      { name: 'Typo', priceMinor: 100 },
+    ]);
+    const dishes = await db.dishes.toArray();
+    return {
+      jollof: dishes.find((d) => d.name === 'Jollof Rice')!.id,
+      typo: dishes.find((d) => d.name === 'Typo')!.id,
+    };
+  }
+
+  it('deletes a dish that was never sold or prepared', async () => {
+    const { jollof, typo } = await setupDishes();
+    await saveMorning(D, 0, { [jollof]: 10, [typo]: 0 }, []);
+    expect(await deleteDish(typo)).toBe(true);
+    expect(await db.dishes.get(typo)).toBeUndefined();
+  });
+
+  it('refuses to delete a dish with sales, even removed ones', async () => {
+    const { jollof } = await setupDishes();
+    const sale = await addOrder(D, [{ dishId: jollof, qty: 1, unitPriceMinor: 150000 }], 150000, 'cash');
+    await voidOrder(sale.id);
+    expect(await deleteDish(jollof)).toBe(false);
+    expect(await db.dishes.get(jollof)).toBeDefined();
+  });
+
+  it('refuses to delete a dish that had portions on a day', async () => {
+    const { jollof } = await setupDishes();
+    await saveMorning(D, 0, { [jollof]: 5 }, []);
+    expect(await deleteDish(jollof)).toBe(false);
   });
 });
 
