@@ -9,6 +9,7 @@ import { Closing } from './screens/Closing';
 import { DayView } from './screens/DayView';
 import { More } from './screens/More';
 import { Morning } from './screens/Morning';
+import { OwedScreen } from './screens/Owed';
 import { Sell } from './screens/Sell';
 import { Setup } from './screens/Setup';
 import { Week } from './screens/Week';
@@ -46,6 +47,7 @@ function Shell({ data, today }: { data: AllData; today: string }) {
   const [morningDate, setMorningDate] = useState<string | null>(null);
   const [notOpenOn, setNotOpenOn] = useState<string | null>(null);
   const [hideBackupBanner, setHideBackupBanner] = useState(false);
+  const [owedOpen, setOwedOpen] = useState(false);
 
   // An earlier day left open has to be dealt with before anything else, oldest first.
   const closedDates = new Set(data.closings.map((c) => c.date));
@@ -93,6 +95,7 @@ function Shell({ data, today }: { data: AllData; today: string }) {
     onOpenToday: openToday,
     onClose: setClosingDate,
     onEditMorning: setMorningDate,
+    onOpenOwed: () => setOwedOpen(true),
   };
 
   return (
@@ -111,7 +114,9 @@ function Shell({ data, today }: { data: AllData; today: string }) {
         </div>
       )}
 
-      {dayDate ? (
+      {owedOpen ? (
+        <OwedScreen onBack={() => setOwedOpen(false)} />
+      ) : dayDate ? (
         <DayView key={dayDate} date={dayDate} onBack={() => setDayDate(null)} {...dayProps} />
       ) : (
         <>
@@ -120,6 +125,7 @@ function Shell({ data, today }: { data: AllData; today: string }) {
               onOpenToday={openToday}
               onClose={() => setClosingDate(today)}
               onViewToday={() => setTab('today')}
+              onViewOwed={() => setOwedOpen(true)}
             />
           )}
           {tab === 'today' && <DayView key={today} date={today} {...dayProps} />}
@@ -132,10 +138,11 @@ function Shell({ data, today }: { data: AllData; today: string }) {
         {TABS.map((name) => (
           <button
             key={name}
-            className={tab === name && !dayDate ? 'tab active' : 'tab'}
-            aria-current={tab === name && !dayDate ? 'page' : undefined}
+            className={tab === name && !dayDate && !owedOpen ? 'tab active' : 'tab'}
+            aria-current={tab === name && !dayDate && !owedOpen ? 'page' : undefined}
             onClick={() => {
               setDayDate(null);
+              setOwedOpen(false);
               setTab(name);
             }}
           >

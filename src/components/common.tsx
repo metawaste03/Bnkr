@@ -99,6 +99,7 @@ export function ExpenseEntry({
   const money = useMoney();
   return (
     <div className="stack-sm">
+      {suggestions.length > 0 && <p className="hint">{t.common.usedBefore}</p>}
       {suggestions.length > 0 && (
         <div className="chips">
           {suggestions.map((s) => (

@@ -44,6 +44,14 @@ export function formatWeekday(date: string): string {
   return parseUtc(date).toLocaleDateString(undefined, { weekday: 'long', timeZone: 'UTC' });
 }
 
+export function formatWeekdayShort(date: string): string {
+  return parseUtc(date).toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' });
+}
+
+export function dayOfMonth(date: string): number {
+  return parseUtc(date).getUTCDate();
+}
+
 export function formatShortDate(date: string): string {
   return parseUtc(date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
 }

@@ -8,7 +8,7 @@ import type { Order } from '../lib/types';
 import { t } from '../strings';
 import { DayChecks } from './Closing';
 import { useExpenseSuggestions } from './Morning';
-import { OwedList, orderSummary } from './Owed';
+import { OwedButton, orderSummary } from './Owed';
 import { SaleForm } from './Sell';
 
 function SaleRow({ order }: { order: Order }) {
@@ -69,12 +69,14 @@ export function DayView({
   onOpenToday,
   onClose,
   onEditMorning,
+  onOpenOwed,
 }: {
   date: string;
   onBack?: () => void;
   onOpenToday: () => void;
   onClose: (date: string) => void;
   onEditMorning: (date: string) => void;
+  onOpenOwed: () => void;
 }) {
   const { data, today } = useApp();
   const money = useMoney();
@@ -84,8 +86,9 @@ export function DayView({
 
   const day = data.days.find((d) => d.date === date);
   const closing = data.closings.find((c) => c.date === date);
-  // Debts can be paid on any day, even one she didn't open, so today's view always offers the list.
-  const owedList = date === today ? <OwedList /> : null;
+  // Debts can be paid on any day, even one she didn't open. Only a button here, so earlier
+  // customers never appear as if they were today's entries.
+  const owedList = date === today ? <OwedButton onOpen={onOpenOwed} /> : null;
 
   if (!day) {
     return (
@@ -110,6 +113,8 @@ export function DayView({
   const payments = data.debtPayments.filter((p) => p.date === date);
   const numbers = dayNumbers(orders, expenses, payments);
   const debtsPaid = numbers.debtCash + numbers.debtTransfer;
+  // "Today's list" would be misleading on an earlier day.
+  const listLabel = date === today ? t.day.listTitle : t.week.dayList;
   const sold = portionsSold(orders);
   const dishIds = [...new Set([...Object.keys(day.portions), ...Object.keys(sold)])].filter(
     (id) => (day.portions[id] ?? 0) > 0 || (sold[id] ?? 0) > 0,
@@ -141,11 +146,11 @@ export function DayView({
         <Row label={t.day.cash} value={money.format(numbers.cash)} />
         <Row label={t.day.transfers} value={money.format(numbers.transfer)} />
         {numbers.credit > 0 && <Row label={t.day.payLater} value={money.format(numbers.credit)} />}
-        <Row label={t.day.costs} value={`− ${money.format(numbers.costs)}`} />
+        <Row label={listLabel} value={`− ${money.format(numbers.costs)}`} />
         {numbers.writtenOff > 0 && <Row label={t.day.writtenOff} value={`− ${money.format(numbers.writtenOff)}`} />}
         {debtsPaid > 0 && (
           <>
-            <Row label={t.day.debtsPaid} value={money.format(debtsPaid)} />
+            <Row label={date === today ? t.day.debtsPaid : t.week.dayDebtsPaid} value={money.format(debtsPaid)} />
             <p className="hint">{t.day.debtsPaidHint}</p>
           </>
         )}
@@ -173,7 +178,7 @@ export function DayView({
       </section>
 
       <section className="card stack-sm">
-        <h2>{t.day.listTitle}</h2>
+        <h2>{listLabel}</h2>
         {expenses.length === 0 && <p className="hint">{t.day.listEmpty}</p>}
         {expenses.map((e) => (
           <div className="row" key={e.id}>

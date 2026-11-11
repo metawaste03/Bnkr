@@ -249,10 +249,12 @@ export function Sell({
   onOpenToday,
   onClose,
   onViewToday,
+  onViewOwed,
 }: {
   onOpenToday: () => void;
   onClose: () => void;
   onViewToday: () => void;
+  onViewOwed: () => void;
 }) {
   const { data, today } = useApp();
   const money = useMoney();
@@ -302,7 +304,7 @@ export function Sell({
         </div>
       )}
       {owedTotal > 0 && (
-        <button className="link" onClick={onViewToday}>
+        <button className="link" onClick={onViewOwed}>
           {t.sell.owedLink(money.format(owedTotal))}
         </button>
       )}

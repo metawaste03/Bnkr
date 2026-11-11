@@ -3,7 +3,7 @@ import { Field, MoneyInput } from '../components/common';
 import { useApp, useMoney } from '../context';
 import { addDebtPayment } from '../db';
 import { debtorsOf, openDebts, type Debt } from '../lib/calculations';
-import { daysBetween } from '../lib/dates';
+import { daysBetween, formatDay } from '../lib/dates';
 import type { DebtMethod, Dish, Order } from '../lib/types';
 import { t } from '../strings';
 
@@ -65,6 +65,35 @@ function PayDebtForm({ debt, name, onDone }: { debt: Debt; name: string; onDone:
   );
 }
 
+/** Its own page, so earlier days' unpaid customers never look like entries on today's screen. */
+export function OwedScreen({ onBack }: { onBack: () => void }) {
+  const total = useOwedTotal();
+  return (
+    <main className="screen stack">
+      <button className="link back" onClick={onBack}>
+        ‹ {t.common.back}
+      </button>
+      {total > 0 ? <OwedList /> : <p className="card">{t.owed.none}</p>}
+    </main>
+  );
+}
+
+/** A button that opens the owed page, showing the total still owed from any day. */
+export function OwedButton({ onOpen }: { onOpen: () => void }) {
+  const money = useMoney();
+  const total = useOwedTotal();
+  if (total === 0) return null;
+  return (
+    <button className="card owed-button" onClick={onOpen}>
+      <span className="owed-button-text">
+        <strong>{t.owed.title}</strong>
+        <span className="hint">{t.owed.buttonHint}</span>
+      </span>
+      <span className="num strong-num">{money.format(total)} ›</span>
+    </button>
+  );
+}
+
 /** Everyone who still owes money, with a way to record payment on the day it arrives. */
 export function OwedList() {
   const { data, today } = useApp();
@@ -94,7 +123,7 @@ export function OwedList() {
                 <span className="debt-info">
                   <span>{orderSummary(debt.order, data.dishes)}</span>
                   <span className="hint">
-                    {t.owed.daysAgo(daysBetween(debt.order.date, today))}
+                    {t.owed.soldOn(formatDay(debt.order.date), t.owed.daysAgo(daysBetween(debt.order.date, today)))}
                     {debt.paid > 0 && ` · ${t.owed.partly(money.format(debt.paid), money.format(debt.remaining))}`}
                   </span>
                 </span>
